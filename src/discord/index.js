@@ -40,7 +40,7 @@ export class DiscordNotifier {
                     {
                         title,
                         description: `\`\`\`\n${error}\n\`\`\``,
-                        color: 16753920, // Orange
+                        color: 16753920, 
                         timestamp: new Date().toISOString(),
                     },
                 ],

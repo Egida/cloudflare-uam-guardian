@@ -6,10 +6,8 @@ import { CloudflareClient } from './cloudflare';
 import { TrafficDetector } from './detector';
 async function bootstrap() {
     logger.info('Initializing Cloudflare Auto Under Attack Guardian...');
-    // Initialize and validate configuration (fails fast if invalid)
     const configService = getConfigService();
     const config = configService.getConfig();
-    // Dependency Injection initialization
     const stateManager = new StateManager(config.stateFilePath);
     const discordNotifier = new DiscordNotifier(config.discordWebhookUrl);
     const cfClient = new CloudflareClient(config.cfApiToken, config.cfZoneId);
@@ -29,16 +27,13 @@ async function bootstrap() {
             timer = setTimeout(loop, config.checkInterval * 1000);
         }
     };
-    // Start the daemon loop
     loop();
-    // Graceful Shutdown handling
     const shutdown = (signal) => {
         logger.info(`Received ${signal}. Starting graceful shutdown...`);
         isRunning = false;
         if (timer) {
             clearTimeout(timer);
         }
-        // Persist final state
         logger.info('Saving state before exit...');
         stateManager.saveState();
         logger.info('Shutdown complete.');

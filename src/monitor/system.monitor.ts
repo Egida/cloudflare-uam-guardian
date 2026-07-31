@@ -3,7 +3,7 @@ import { logger } from '../logger';
 
 export class SystemHealthMonitor {
   private timer: NodeJS.Timeout | null = null;
-  private readonly historySize = 15; // Track last 15 samples (30 seconds total at 2s interval)
+  private readonly historySize = 15; 
   private cpuHistory: number[] = [];
   
   private lastIdle = 0;
@@ -51,7 +51,7 @@ export class SystemHealthMonitor {
 
       if (totalDelta > 0) {
         let usage = 100 - (idleDelta / totalDelta) * 100;
-        usage = Math.max(0, Math.min(100, usage)); // Clamp to 0-100%
+        usage = Math.max(0, Math.min(100, usage)); 
         
         this.cpuHistory.push(usage);
         if (this.cpuHistory.length > this.historySize) {
