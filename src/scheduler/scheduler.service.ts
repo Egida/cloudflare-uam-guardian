@@ -226,7 +226,6 @@ export class GuardianScheduler {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error({ error: errorMsg }, 'Error during scheduler tick processing.');
       
-      // Jangan ganggu user dengan notifikasi Discord jika hanya error koneksi/timeout sesaat
       const isNetworkError = errorMsg.toLowerCase().includes('timeout') || 
                              errorMsg.toLowerCase().includes('econnreset') ||
                              errorMsg.toLowerCase().includes('network');

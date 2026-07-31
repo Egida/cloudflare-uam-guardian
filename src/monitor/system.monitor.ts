@@ -3,7 +3,7 @@ import { logger } from '../logger';
 
 export class SystemHealthMonitor {
   private timer: NodeJS.Timeout | null = null;
-  private readonly historySize = 15; 
+  private readonly historySize = 30; 
   private cpuHistory: number[] = [];
   
   private lastIdle = 0;
