@@ -144,14 +144,14 @@ export class CloudflareService {
       }
     `;
 
-    const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
+    const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
 
     try {
       const response = await this.client.post<CloudflareAnalyticsResponse>(CloudflareEndpoints.graphql(), {
         query,
         variables: {
           zoneTag: this.zoneId,
-          datetimeGeq: oneMinuteAgo,
+          datetimeGeq: threeMinutesAgo,
         },
       });
 
@@ -168,7 +168,7 @@ export class CloudflareService {
       const totalCount = zoneData.totalRequests?.[0]?.count || 0;
       const errorCount = zoneData.errorRequests?.[0]?.count || 0;
 
-      const rps = Math.floor(totalCount / 60);
+      const rps = Math.floor(totalCount / 180);
       const errorRate = totalCount > 0 ? (errorCount / totalCount) * 100 : 0;
 
       return { rps, errorRate };

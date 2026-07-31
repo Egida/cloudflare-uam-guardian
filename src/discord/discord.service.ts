@@ -92,7 +92,11 @@ export class DiscordNotificationService {
   private buildEmbed(type: NotificationType, details: NotificationDetails): DiscordEmbed {
     const now = new Date();
     const isoTimestamp = now.toISOString();
-    const formattedTime = now.toLocaleString();
+    const formattedTime = now.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      dateStyle: 'medium',
+      timeStyle: 'long',
+    }) + ' WIB';
 
     let title = 'Cloudflare Guardian Alert';
     let color = 3447003;
