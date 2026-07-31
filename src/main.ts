@@ -38,6 +38,28 @@ async function bootstrap() {
     reason: `Guardian daemon initialized. Monitoring interval: ${config.checkInterval}s.`,
   });
 
+  try {
+    const currentLevel = await cfService.getCurrentSecurityLevel();
+    logger.info({ currentLevel }, 'Synced initial security level from Cloudflare.');
+    const currentState = stateManager.getState();
+
+    if (currentLevel === 'under_attack' && !currentState.isUnderAttack) {
+      logger.warn('Cloudflare is in Under Attack Mode, but local state was false. Syncing state...');
+      stateManager.updateState({
+        isUnderAttack: true,
+        enabledAt: Date.now(),
+        lastAttackDetected: Date.now(),
+        cooldownUntil: Date.now() + (config.cooldownMinutes * 60 * 1000)
+      });
+    } else if (currentLevel !== 'under_attack' && currentState.isUnderAttack) {
+      logger.warn('Cloudflare is NOT in Under Attack Mode, but local state was true. Syncing state...');
+      stateManager.updateState({ isUnderAttack: false });
+    }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ error: errorMsg }, 'Failed to sync initial security level from Cloudflare.');
+  }
+
   scheduler.start();
 
   if (config.localMonitoringEnabled) {

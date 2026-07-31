@@ -101,7 +101,7 @@ export class GuardianScheduler {
 
       const { rps, errorRate } = await this.cfService.getTrafficMetrics();
       const cpuUsage = config.localMonitoringEnabled ? getSystemHealthMonitor().getAverageCpuUsage() : 0;
-      
+
       const metrics: TrafficMetrics = {
         rps,
         errorRate,
@@ -110,17 +110,40 @@ export class GuardianScheduler {
       };
 
       const detectionResult = this.detector.evaluate(metrics);
-      const state = this.stateManager.getState();
+      const currentSecurityLevel = await this.cfService.getCurrentSecurityLevel();
+      const isCloudflareUnderAttack = currentSecurityLevel === 'under_attack';
+
+      let state = this.stateManager.getState();
       const now = Date.now();
 
+      // Sinkronisasi otomatis jika diubah secara manual dari luar (misal: via PHP atau Dashboard)
+      if (isCloudflareUnderAttack && !state.isUnderAttack) {
+        logger.warn('UAM detected as ENABLED on Cloudflare (External Change). Syncing state...');
+        state = this.stateManager.updateState({
+          isUnderAttack: true,
+          enabledAt: now,
+          lastAttackDetected: now,
+          cooldownUntil: now + (config.cooldownMinutes * 60 * 1000),
+          lastDecision: 'EXTERNAL_ENABLE_SYNC',
+        });
+      } else if (!isCloudflareUnderAttack && state.isUnderAttack) {
+        logger.warn('UAM detected as DISABLED on Cloudflare (External Change). Syncing state...');
+        state = this.stateManager.updateState({
+          isUnderAttack: false,
+          enabledAt: null,
+          cooldownUntil: null,
+          lastDecision: 'EXTERNAL_DISABLE_SYNC',
+        });
+      }
+
       logger.info(
-        { 
-          rps, 
-          errorRate: `${errorRate.toFixed(2)}%`, 
+        {
+          rps,
+          errorRate: `${errorRate.toFixed(2)}%`,
           cpuUsage: `${cpuUsage.toFixed(1)}%`,
-          status: detectionResult.status, 
-          score: detectionResult.totalScore, 
-          isUnderAttack: state.isUnderAttack 
+          status: detectionResult.status,
+          score: detectionResult.totalScore,
+          isUnderAttack: state.isUnderAttack
         },
         'Evaluated traffic state'
       );
@@ -130,7 +153,7 @@ export class GuardianScheduler {
 
         if (!state.isUnderAttack) {
           logger.warn({ rps, threshold: config.enableThreshold }, 'Attack detected! Enabling Under Attack Mode...');
-          
+
           const newLevel = await this.cfService.enableUnderAttackMode();
 
           this.stateManager.updateState({
