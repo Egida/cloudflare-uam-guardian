@@ -2,23 +2,24 @@
 
 ## Supported Versions
 
-Only the latest major release of this project actively receives security updates and vulnerability patches.
-
-| Version | Supported          |
-| :------ | :----------------- |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| Version / Branch | Supported          | Status |
+| :--------------- | :----------------- | :----- |
+| `main` (latest)  | :white_check_mark: | Recommended for production; receives active security patches. |
+| `1.0.x`          | :white_check_mark: | Stable releases supported. |
+| `< 1.0` (pre-rel)| :x:                | Deprecated. Upgrade to `main` or the latest tagged release. |
 
 ---
 
 ## Reporting a Vulnerability
 
-We take the security of automated infrastructure defense tools seriously. If you discover a security vulnerability, flaw in the detection logic, or potential credential exposure issue, please report it responsibly.
+We take the security and reliability of automated infrastructure defense tools seriously. If you discover a security vulnerability, flaw in the detection logic, or potential credential exposure issue, please report it responsibly.
 
 ### Disclosure Process
 
-1. **Do not create public issues:** Please do not disclose vulnerabilities in public GitHub issues, pull requests, or public forums.
-2. **Contact:** Submit a private vulnerability report via GitHub Security Advisories (if enabled on the repository) or email the repository maintainers directly.
+1. **Do not create public issues:** Please do not disclose security vulnerabilities in public GitHub issues, pull requests, or discussions.
+2. **Contact:**
+   - **Preferred (GitHub Security Advisory):** Submit a private report directly via [GitHub Private Vulnerability Reporting](https://github.com/shditz/cloudflare-uam-guardian/security/advisories/new) under the repository's **Security** tab.
+   - **Alternative (Direct Email):** If you prefer email or cannot access the GitHub Security tab, send your report to: `security [at] komikaze [dot] my [dot] id`.
 3. **Information to Include:**
    - Detailed description of the vulnerability.
    - Steps to reproduce or proof-of-concept (PoC) code.
