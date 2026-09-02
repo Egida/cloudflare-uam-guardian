@@ -48,18 +48,30 @@ export class ConfigService {
     }
 
     const errorRateThresholdRaw = env.ERROR_RATE_THRESHOLD;
-    const errorRateThreshold = errorRateThresholdRaw ? Number(errorRateThresholdRaw) : 5; // Default 5%
+    const errorRateThreshold = errorRateThresholdRaw ? Number(errorRateThresholdRaw) : 5; 
     if (isNaN(errorRateThreshold) || errorRateThreshold <= 0 || errorRateThreshold > 100) {
       errors.push(`ERROR_RATE_THRESHOLD must be a number between 1 and 100 (received: "${errorRateThresholdRaw}").`);
     }
 
     const localMonitoringEnabledRaw = env.LOCAL_MONITORING_ENABLED;
-    const localMonitoringEnabled = localMonitoringEnabledRaw ? localMonitoringEnabledRaw.toLowerCase() === 'true' : true; // Default true
+    const localMonitoringEnabled = localMonitoringEnabledRaw ? localMonitoringEnabledRaw.toLowerCase() === 'true' : true; 
 
     const cpuThresholdRaw = env.CPU_THRESHOLD;
-    const cpuThreshold = cpuThresholdRaw ? Number(cpuThresholdRaw) : 90; // Default 90%
+    const cpuThreshold = cpuThresholdRaw ? Number(cpuThresholdRaw) : 90;
     if (isNaN(cpuThreshold) || cpuThreshold <= 0 || cpuThreshold > 100) {
       errors.push(`CPU_THRESHOLD must be a number between 1 and 100 (received: "${cpuThresholdRaw}").`);
+    }
+
+    const heartbeatIntervalMinutesRaw = env.HEARTBEAT_INTERVAL_MINUTES;
+    const heartbeatIntervalMinutes = heartbeatIntervalMinutesRaw ? Number(heartbeatIntervalMinutesRaw) : 360;
+    if (isNaN(heartbeatIntervalMinutes) || heartbeatIntervalMinutes <= 0) {
+      errors.push(`HEARTBEAT_INTERVAL_MINUTES must be a positive number (received: "${heartbeatIntervalMinutesRaw}").`);
+    }
+
+    const maxConsecutiveApiFailuresRaw = env.MAX_CONSECUTIVE_API_FAILURES;
+    const maxConsecutiveApiFailures = maxConsecutiveApiFailuresRaw ? Number(maxConsecutiveApiFailuresRaw) : 5;
+    if (isNaN(maxConsecutiveApiFailures) || maxConsecutiveApiFailures <= 0 || !Number.isInteger(maxConsecutiveApiFailures)) {
+      errors.push(`MAX_CONSECUTIVE_API_FAILURES must be a positive integer (received: "${maxConsecutiveApiFailuresRaw}").`);
     }
 
     const validSecurityLevels: SecurityLevel[] = ['off', 'essentially_off', 'low', 'medium', 'high'];
@@ -71,8 +83,12 @@ export class ConfigService {
     }
 
     const discordWebhookUrl = env.DISCORD_WEBHOOK_URL?.trim();
-    if (discordWebhookUrl && !this.isValidUrl(discordWebhookUrl)) {
-      errors.push(`DISCORD_WEBHOOK_URL must be a valid HTTP/HTTPS URL (received: "${discordWebhookUrl}").`);
+    if (discordWebhookUrl) {
+      if (!this.isValidUrl(discordWebhookUrl)) {
+        errors.push(`DISCORD_WEBHOOK_URL must be a valid HTTP/HTTPS URL (received: "${discordWebhookUrl}").`);
+      } else if (!this.isValidDiscordWebhook(discordWebhookUrl)) {
+        errors.push(`DISCORD_WEBHOOK_URL must point to discord.com webhook endpoint for security (received domain is not discord.com).`);
+      }
     }
 
     const validLogLevels = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'];
@@ -102,7 +118,11 @@ export class ConfigService {
       errorRateThreshold,
       localMonitoringEnabled,
       cpuThreshold,
+      heartbeatIntervalMinutes,
+      maxConsecutiveApiFailures,
     };
+
+    this.logActiveConfig();
   }
 
   private isValidUrl(url: string): boolean {
@@ -112,6 +132,42 @@ export class ConfigService {
     } catch {
       return false;
     }
+  }
+
+  private isValidDiscordWebhook(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'discord.com' || parsed.hostname.endsWith('.discord.com');
+    } catch {
+      return false;
+    }
+  }
+
+  private logActiveConfig(): void {
+    const { logger: pinoLogger } = require('../logger');
+    const masked = {
+      cfApiToken: this.maskSecret(this.config.cfApiToken),
+      cfZoneId: this.maskSecret(this.config.cfZoneId),
+      checkInterval: this.config.checkInterval,
+      enableThreshold: this.config.enableThreshold,
+      disableThreshold: this.config.disableThreshold,
+      cooldownMinutes: this.config.cooldownMinutes,
+      defaultSecurityLevel: this.config.defaultSecurityLevel,
+      discordWebhookUrl: this.config.discordWebhookUrl ? this.maskSecret(this.config.discordWebhookUrl) : 'NOT_SET',
+      logLevel: this.config.logLevel,
+      stateFilePath: this.config.stateFilePath,
+      errorRateThreshold: this.config.errorRateThreshold,
+      localMonitoringEnabled: this.config.localMonitoringEnabled,
+      cpuThreshold: this.config.cpuThreshold,
+      heartbeatIntervalMinutes: this.config.heartbeatIntervalMinutes,
+      maxConsecutiveApiFailures: this.config.maxConsecutiveApiFailures,
+    };
+    pinoLogger.info({ config: masked }, 'Active configuration loaded (sensitive fields masked).');
+  }
+
+  private maskSecret(secret: string): string {
+    if (secret.length <= 10) return '****';
+    return `${secret.substring(0, 4)}****${secret.substring(secret.length - 4)}`;
   }
 
   public getConfig(): AppConfig {
@@ -168,6 +224,14 @@ export class ConfigService {
 
   public get cpuThreshold(): number {
     return this.config.cpuThreshold;
+  }
+
+  public get heartbeatIntervalMinutes(): number {
+    return this.config.heartbeatIntervalMinutes;
+  }
+
+  public get maxConsecutiveApiFailures(): number {
+    return this.config.maxConsecutiveApiFailures;
   }
 }
 

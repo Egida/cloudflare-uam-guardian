@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../logger';
-import { CloudflareAnalyticsResponse, CloudflareApiResponse, CloudflareSecurityLevelResult, SecurityLevel } from '../types';
+import { CloudflareAnalyticsResponse, CloudflareApiResponse, CloudflareSecurityLevelResult, SecurityLevel, TrafficMetricsResult } from '../types';
 import { CLOUDFLARE_BASE_URL, CloudflareEndpoints } from './cloudflare.endpoints';
 
 export class CloudflareApiError extends Error {
@@ -122,7 +122,8 @@ export class CloudflareService {
     throw new CloudflareApiError(`Cloudflare API call (${operationName}) failed after ${this.maxRetries} retries`);
   }
 
-  public async getTrafficMetrics(): Promise<{ rps: number; errorRate: number }> {
+  public async getTrafficMetrics(): Promise<TrafficMetricsResult | null> {
+    const operationName = 'getTrafficMetrics';
     const query = `
       query GetZoneTraffic($zoneTag: String!, $datetimeGeq: String!) {
         viewer {
@@ -145,38 +146,138 @@ export class CloudflareService {
     `;
 
     const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    let attempt = 0;
 
-    try {
-      const response = await this.client.post<CloudflareAnalyticsResponse>(CloudflareEndpoints.graphql(), {
-        query,
-        variables: {
-          zoneTag: this.zoneId,
-          datetimeGeq: threeMinutesAgo,
-        },
-      });
+    while (attempt <= this.maxRetries) {
+      const startMs = Date.now();
 
-      if (response.data.errors && response.data.errors.length > 0) {
-        logger.error({ errors: response.data.errors }, 'Cloudflare GraphQL API returned errors');
-        return { rps: 0, errorRate: 0 };
+      try {
+        logger.debug({ operationName, attempt }, 'Fetching traffic metrics from Cloudflare GraphQL API');
+
+        const response = await this.client.post<CloudflareAnalyticsResponse>(CloudflareEndpoints.graphql(), {
+          query,
+          variables: {
+            zoneTag: this.zoneId,
+            datetimeGeq: threeMinutesAgo,
+          },
+        });
+
+        const latencyMs = Date.now() - startMs;
+
+        if (response.data.errors && response.data.errors.length > 0) {
+          logger.error(
+            { operationName, errors: response.data.errors, latencyMs, attempt },
+            'Cloudflare GraphQL API returned query-level errors. Treating as failure (fail-safe).'
+          );
+          return null;
+        }
+
+        const zoneData = response.data.data?.viewer?.zones?.[0];
+        if (!zoneData) {
+          logger.warn(
+            { operationName, latencyMs, attempt },
+            'Cloudflare GraphQL response contained no zone data. Zone may be misconfigured.'
+          );
+          return null;
+        }
+
+        const totalCount = zoneData.totalRequests?.[0]?.count || 0;
+        const errorCount = zoneData.errorRequests?.[0]?.count || 0;
+
+        const rps = Math.floor(totalCount / 180);
+        const errorRate = totalCount > 0 ? (errorCount / totalCount) * 100 : 0;
+
+        logger.debug(
+          { operationName, latencyMs, rps, errorRate: `${errorRate.toFixed(2)}%`, totalCount, errorCount },
+          'Traffic metrics fetched successfully'
+        );
+
+        return { rps, errorRate, latencyMs };
+      } catch (err: unknown) {
+        const latencyMs = Date.now() - startMs;
+        attempt++;
+
+        if (axios.isAxiosError(err)) {
+          const axiosErr = err as AxiosError;
+          const status = axiosErr.response?.status;
+          const errorCode = axiosErr.code;
+
+          let errorCategory: string;
+          if (errorCode === 'ECONNABORTED' || errorCode === 'ETIMEDOUT' || axiosErr.message.includes('timeout')) {
+            errorCategory = 'TIMEOUT';
+          } else if (status === 401 || status === 403) {
+            errorCategory = 'AUTH_ERROR';
+            logger.error(
+              { operationName, status, errorCategory, latencyMs },
+              `Cloudflare API authentication failed (${status}). Check CF_API_TOKEN validity.`
+            );
+            return null;
+          } else if (status === 429) {
+            errorCategory = 'RATE_LIMITED';
+            const retryAfterHeader = axiosErr.response?.headers?.['retry-after'];
+            
+            let retryAfterSeconds = Math.pow(2, attempt); 
+            if (retryAfterHeader) {
+              const parsedInt = parseInt(retryAfterHeader, 10);
+              if (!isNaN(parsedInt)) {
+                retryAfterSeconds = parsedInt;
+              } else {
+                const dateMs = Date.parse(retryAfterHeader);
+                if (!isNaN(dateMs)) {
+                  retryAfterSeconds = Math.max(1, Math.ceil((dateMs - Date.now()) / 1000));
+                }
+              }
+            }
+            
+            const waitMs = Math.max(2, retryAfterSeconds) * 1000;
+
+            if (attempt <= this.maxRetries) {
+              logger.warn(
+                { operationName, attempt, maxRetries: this.maxRetries, errorCategory, waitMs, latencyMs },
+                `Rate limited by Cloudflare API (429). Retrying after ${waitMs}ms...`
+              );
+              await new Promise((res) => setTimeout(res, waitMs));
+              continue;
+            }
+          } else if (errorCode === 'ECONNRESET' || errorCode === 'ENOTFOUND' || errorCode === 'EAI_AGAIN') {
+            errorCategory = 'NETWORK_ERROR';
+          } else if (status && status >= 500) {
+            errorCategory = 'SERVER_ERROR';
+          } else {
+            errorCategory = 'UNKNOWN_HTTP_ERROR';
+          }
+
+          if (attempt <= this.maxRetries) {
+            const backoffMs = Math.pow(2, attempt) * 1000;
+            logger.warn(
+              { operationName, attempt, maxRetries: this.maxRetries, errorCategory, status, errorCode, latencyMs, backoffMs },
+              `Traffic metrics fetch failed (${errorCategory}). Retrying in ${backoffMs}ms...`
+            );
+            await new Promise((res) => setTimeout(res, backoffMs));
+            continue;
+          }
+
+          logger.error(
+            { operationName, errorCategory, status, errorCode, latencyMs, attempt },
+            `Traffic metrics fetch failed after ${this.maxRetries} retries (${errorCategory}). Returning null (fail-safe).`
+          );
+        } else {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.error(
+            { operationName, error: errorMsg, latencyMs, attempt },
+            'Unexpected non-Axios error during traffic metrics fetch. Returning null (fail-safe).'
+          );
+        }
+
+        return null;
       }
-
-      const zoneData = response.data.data?.viewer?.zones?.[0];
-      if (!zoneData) {
-        return { rps: 0, errorRate: 0 };
-      }
-
-      const totalCount = zoneData.totalRequests?.[0]?.count || 0;
-      const errorCount = zoneData.errorRequests?.[0]?.count || 0;
-
-      const rps = Math.floor(totalCount / 180);
-      const errorRate = totalCount > 0 ? (errorCount / totalCount) * 100 : 0;
-
-      return { rps, errorRate };
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error({ error: errorMsg }, 'Failed to fetch traffic metrics from Cloudflare GraphQL API.');
-      return { rps: 0, errorRate: 0 };
     }
+
+    logger.error(
+      { operationName, maxRetries: this.maxRetries },
+      `Traffic metrics fetch exhausted all ${this.maxRetries} retries. Returning null (fail-safe).`
+    );
+    return null;
   }
 
   public async getCurrentSecurityLevel(): Promise<SecurityLevel> {

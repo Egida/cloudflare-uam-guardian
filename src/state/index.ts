@@ -90,22 +90,47 @@ export class StateManager {
 
   private writeAtomic(state: AppState): void {
     const tempPath = `${this.filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 8)}`;
-    try {
-      const jsonContent = JSON.stringify(state, null, 2);
-      fs.writeFileSync(tempPath, jsonContent, 'utf-8');
-      fs.renameSync(tempPath, this.filePath);
-      logger.debug({ filePath: this.filePath }, 'State file written atomically.');
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error({ tempPath, filePath: this.filePath, error: errorMsg }, 'Atomic state write failed.');
+    const jsonContent = JSON.stringify(state, null, 2);
 
-      if (fs.existsSync(tempPath)) {
-        try {
-          fs.unlinkSync(tempPath);
-        } catch {
+    try {
+      fs.writeFileSync(tempPath, jsonContent, 'utf-8');
+
+      try {
+        fs.renameSync(tempPath, this.filePath);
+      } catch (renameErr: unknown) {
+        const renameMsg = renameErr instanceof Error ? renameErr.message : String(renameErr);
+        logger.warn(
+          { filePath: this.filePath, error: renameMsg },
+          'Atomic rename failed (possible file lock). Falling back to direct write.'
+        );
+        fs.writeFileSync(this.filePath, jsonContent, 'utf-8');
+
+        if (fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
         }
       }
-      throw new Error(`Failed to write state file atomically: ${errorMsg}`);
+
+      this.setSecurePermissions(this.filePath);
+
+      logger.debug({ filePath: this.filePath }, 'State file written successfully.');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error({ tempPath, filePath: this.filePath, error: errorMsg }, 'State write failed.');
+
+      if (fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+      }
+      throw new Error(`Failed to write state file: ${errorMsg}`);
+    }
+  }
+
+  private setSecurePermissions(filePath: string): void {
+    if (process.platform === 'win32') return;
+    try {
+      fs.chmodSync(filePath, 0o600);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.warn({ filePath, error: errorMsg }, 'Failed to set secure file permissions (non-critical).');
     }
   }
 
@@ -114,11 +139,23 @@ export class StateManager {
   }
 
   public updateState(partialState: Partial<AppState>): Readonly<AppState> {
+    const oldState = { ...this.currentState };
     this.currentState = {
       ...this.currentState,
       ...partialState,
     };
     this.writeAtomic(this.currentState);
+
+    logger.debug(
+      {
+        stateChange: {
+          before: { isUnderAttack: oldState.isUnderAttack, lastDecision: oldState.lastDecision },
+          after: { isUnderAttack: this.currentState.isUnderAttack, lastDecision: this.currentState.lastDecision },
+        },
+      },
+      'State updated'
+    );
+
     return this.getState();
   }
 

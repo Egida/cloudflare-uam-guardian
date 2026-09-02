@@ -14,6 +14,8 @@ export interface AppConfig {
   errorRateThreshold: number;
   localMonitoringEnabled: boolean;
   cpuThreshold: number;
+  heartbeatIntervalMinutes: number;
+  maxConsecutiveApiFailures: number;
 }
 
 export interface AppState {
@@ -22,6 +24,25 @@ export interface AppState {
   lastAttackDetected: number | null;
   cooldownUntil: number | null;
   lastDecision: string | null;
+}
+
+export interface TrafficMetricsResult {
+  rps: number;
+  errorRate: number;
+  latencyMs: number;
+}
+
+export interface GuardianStatistics {
+  startedAt: number;
+  totalTicks: number;
+  successfulTicks: number;
+  failedTicks: number;
+  consecutiveApiFailures: number;
+  totalUamActivations: number;
+  totalUamDeactivations: number;
+  lastSuccessfulTickAt: number | null;
+  lastFailedTickAt: number | null;
+  averageTickLatencyMs: number;
 }
 
 export interface CloudflareApiResponse<T> {

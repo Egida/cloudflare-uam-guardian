@@ -42,9 +42,8 @@ export class AttackDetector {
       }
     }
 
-    const finalScore = maxRuleScore >= 100
-      ? 100
-      : (totalWeight > 0 ? Math.min(100, Math.round(totalWeightedScore / totalWeight)) : 0);
+    const averageScore = totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : 0;
+    const finalScore = Math.min(100, Math.max(maxRuleScore, averageScore));
 
     let status: DetectionStatus = 'NORMAL';
     if (finalScore >= 70) {

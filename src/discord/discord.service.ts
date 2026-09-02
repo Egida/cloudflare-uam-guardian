@@ -18,6 +18,10 @@ export class DiscordNotificationService {
   private readonly lastSentMap: Map<NotificationType, number>;
   private readonly client: AxiosInstance;
 
+  private static readonly COOLDOWN_EXEMPT_TYPES: ReadonlySet<NotificationType> = new Set([
+    'ATTACK_STARTED',
+  ]);
+
   constructor(options: DiscordServiceOptions) {
     this.webhookUrl = options.webhookUrl?.trim();
     this.cooldownMs = options.cooldownMs ?? 60000;
@@ -34,7 +38,9 @@ export class DiscordNotificationService {
       return false;
     }
 
-    if (this.isCooldownActive(type)) {
+    const isExempt = DiscordNotificationService.COOLDOWN_EXEMPT_TYPES.has(type);
+
+    if (!isExempt && this.isCooldownActive(type)) {
       logger.warn({ type, cooldownMs: this.cooldownMs }, 'Notification suppressed due to cooldown.');
       return false;
     }
@@ -45,16 +51,25 @@ export class DiscordNotificationService {
       embeds: [embed],
     };
 
-    try {
-      await this.client.post(this.webhookUrl, payload);
-      this.lastSentMap.set(type, Date.now());
-      logger.info({ type }, 'Discord notification sent successfully.');
-      return true;
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error({ type, error: errorMsg }, 'Failed to send Discord webhook notification.');
-      return false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.client.post(this.webhookUrl, payload);
+        this.lastSentMap.set(type, Date.now());
+        logger.info({ type, attempt }, 'Discord notification sent successfully.');
+        return true;
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        if (attempt === 0) {
+          logger.warn({ type, error: errorMsg, attempt }, 'Discord notification failed. Retrying once...');
+          await new Promise((res) => setTimeout(res, 1000));
+          continue;
+        }
+        logger.error({ type, error: errorMsg, attempt }, 'Failed to send Discord webhook notification after retry.');
+        return false;
+      }
     }
+
+    return false;
   }
 
   public async notifyAppStarted(details?: Partial<NotificationDetails>): Promise<boolean> {
