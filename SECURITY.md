@@ -17,9 +17,7 @@ We take the security and reliability of automated infrastructure defense tools s
 ### Disclosure Process
 
 1. **Do not create public issues:** Please do not disclose security vulnerabilities in public GitHub issues, pull requests, or discussions.
-2. **Contact:**
-   - **Preferred (GitHub Security Advisory):** Submit a private report directly via [GitHub Private Vulnerability Reporting](https://github.com/shditz/cloudflare-uam-guardian/security/advisories/new) under the repository's **Security** tab.
-   - **Alternative (Direct Email):** If you prefer email or cannot access the GitHub Security tab, send your report to: `security [at] komikaze [dot] my [dot] id`.
+2. **Contact:** Submit a private report directly via [GitHub Private Vulnerability Reporting](https://github.com/shditz/cloudflare-uam-guardian/security/advisories/new) under the repository's **Security** tab.
 3. **Information to Include:**
    - Detailed description of the vulnerability.
    - Steps to reproduce or proof-of-concept (PoC) code.
